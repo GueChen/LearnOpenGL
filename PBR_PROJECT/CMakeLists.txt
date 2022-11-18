@@ -20,3 +20,4 @@ project ("OPGL_PROJ")
 
 # 包含子项目。
 add_subdirectory ("PBR_PROJECT")
+add_subdirectory ("Common")

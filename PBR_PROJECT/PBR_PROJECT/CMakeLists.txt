@@ -9,14 +9,6 @@ file(GLOB_RECURSE HEADER_FILES "*.h")
 file(GLOB_RECURSE SOURCE_FILES "*.cpp" "*.c")
 # add glfw3 library
 find_package(glfw3 CONFIG REQUIRED)
-# add assimp library
-find_package(assimp CONFIG REQUIRED)
-# add opengl 
-find_package(glad CONFIG REQUIRED)
-# add glm
-find_package(glm CONFIG REQUIRED)
-# find stb
-find_path(STB_INCLUDE_DIRS "stb_c_lexer.h")
 
 add_executable (${TARGET_NAME} ${SOURCE_FILES} ${HEADER_FILES})
 
@@ -30,25 +22,5 @@ else(glfw3_FOUND)
 	message(FATAL_ERROR "COUDNT FOUND GLFW3 LIB")
 endif(glfw3_FOUND)
 
-if(assimp_FOUND)
-	target_include_directories(${TARGET_NAME} PUBLIC ${assimp_INCLUDE_DIR})
-	target_link_libraries(${TARGET_NAME} PUBLIC assimp::assimp)
-else(assimp_FOUND)
-	message(FATAL_ERROR "COUDNT FOUND ASSIMP LIB")
-endif(assimp_FOUND)
-
-if(glad_FOUND)
-	target_include_directories(${TARGET_NAME} PUBLIC ${GLAD_INCLUDE_DIR})
-	target_link_libraries(${TARGET_NAME} PUBLIC glad::glad)
-else(glad_FOUND)
-	message(FATAL_ERROR "COUDNT FOUND GLAD LIB")
-endif(glad_FOUND)
-
-if(glm_FOUND)
-	target_include_directories(${TARGET_NAME} PUBLIC ${glm_INCLUDE_DIR})
-	target_link_libraries(${TARGET_NAME} PUBLIC glm::glm)
-else(glm_FOUND)
-	message(FATAL_ERROR "COUDNT FOUND GLM LIB")
-endif(glm_FOUND)
-
-target_include_directories(${TARGET_NAME} PRIVATE ${STB_INCLUDE_DIRS})
+# link the common library
+target_link_libraries(${TARGET_NAME} PUBLIC common_lib)
