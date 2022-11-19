@@ -3,20 +3,26 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
+# configure cmake toolchain => vcpkg
 if(DEFINED ENV{VCPKG})
-message("vcpkg found install path = $ENV{VCPKG}")
-set(VCPKG_ROOT "$ENV{VCPKG}\\scripts\\buildsystems\\vcpkg.cmake")
-set(CMAKE_TOOLCHAIN_FILE ${VCPKG_ROOT})
+	message("vcpkg found install path = $ENV{VCPKG}")
+	set(VCPKG_ROOT "$ENV{VCPKG}\\scripts\\buildsystems\\vcpkg.cmake")
+	set(CMAKE_TOOLCHAIN_FILE ${VCPKG_ROOT})
 else()
-message(FATAL_ERROR 
-		"vcpkg not exist, please set it to environment variables\n"
-		"format - VCPKG = <path>\n"
-		"Windows Powershell user:\n"
-		"$Env:VCPKG = '{vcpkg install path}'"
-)
+	message(FATAL_ERROR 
+			"vcpkg not exist, please set it to environment variables\n"
+			"format - VCPKG = <path>\n"
+			"Windows Powershell user:\n"
+			"$Env:VCPKG = '{vcpkg install path}'"
+	)
 endif()
 
-project ("OPGL_PROJ")
+# add custom defines
+add_definitions(-DSHADER_PATH_PREFIX="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
+add_definitions(-DASSET_PATH_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+#add_definitions(-DPBR_TEXTURE)
+
+project ("LearnOpenGL")
 
 # 包含子项目。
 add_subdirectory ("PBR_PROJECT")

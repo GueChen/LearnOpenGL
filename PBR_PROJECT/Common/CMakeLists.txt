@@ -3,7 +3,7 @@ cmake_minimum_required (VERSION 3.8)
 set(TARGET_NAME common_lib)
 
 file(GLOB_RECURSE HEADER_FILES "inc/*.h")
-
+file(GLOB_RECURSE SOURCE_FILES "src/*.c" "src/*.cpp")
 # add assimp library
 find_package(assimp CONFIG REQUIRED)
 
@@ -30,7 +30,7 @@ else(glad_FOUND)
 endif(glad_FOUND)
 
 if(glm_FOUND)
-	target_include_directories(${TARGET_NAME} PUBLIC ${glm_INCLUDE_DIR})
+	target_include_directories(${TARGET_NAME} PUBLIC ${GLM_INCLUDE_DIR})
 	target_link_libraries(${TARGET_NAME} PUBLIC glm::glm)
 else(glm_FOUND)
 	message(FATAL_ERROR "COUDNT FOUND GLM LIB")

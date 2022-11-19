@@ -62,13 +62,13 @@ public:
         // 2. compile shaders
         unsigned int vertex, fragment;
         // vertex shader
-        vertex = glCreateShader(GL_VERTEX_SHADER);
+        vertex = glCreateShader(GL_VERTEX_SHADER);        
         glShaderSource(vertex, 1, &vShaderCode, NULL);
         glCompileShader(vertex);
         checkCompileErrors(vertex, "VERTEX");
         // fragment Shader
         fragment = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragment, 1, &fShaderCode, NULL);
+        glShaderSource(fragment, 1, &fShaderCode, NULL);        
         glCompileShader(fragment);
         checkCompileErrors(fragment, "FRAGMENT");
         // if geometry shader is given, compile geometry shader

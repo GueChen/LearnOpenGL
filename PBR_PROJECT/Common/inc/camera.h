@@ -4,7 +4,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 
 // Defines several possible options for camera movement. Used as abstraction to stay away from window-system specific input methods
@@ -110,6 +110,22 @@ public:
             Zoom = 1.0f;
         if (Zoom > 45.0f)
             Zoom = 45.0f;
+    }
+    
+    void ProcessPerspectiveView(float xoffset, float yoffset) {
+        xoffset *= MouseSensitivity;
+        yoffset *= MouseSensitivity;
+        
+        Yaw   += xoffset;
+        Pitch += yoffset;
+        
+        if (Pitch > 89.0f)
+            Pitch = 89.0f;
+        if (Pitch < -89.0f)
+            Pitch = -89.0f;
+        
+        updateCameraVectors();        
+        Position = -((float)Position.length() * Front);
     }
 
 private:
