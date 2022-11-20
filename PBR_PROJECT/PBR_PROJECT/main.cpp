@@ -1,7 +1,7 @@
 ﻿#include "shader.h"
 #include "camera.h"
 #include "model.h"
-
+#define STB_IMAGE_IMPLEMENTATION
 #include <GLFW/glfw3.h>
 #include <stb_image.h>
 #include <glm/gtx/transform.hpp>
@@ -24,8 +24,8 @@ using namespace glm;
 #endif // PBR_TEXTURE
 
 /*____________________________________const varaiable____________________________________*/
-const uint32_t kScrWidth  = 1280;
-const uint32_t kScrHeight = 720;
+uint32_t scr_width  = 1280;
+uint32_t scr_height = 720;
 
 /*____________________________________function declarations_______________________________*/
 #ifdef PBR_TEXTURE
@@ -33,9 +33,11 @@ void		InitializeTexture();
 #endif // PBR_TEXTURE
 void        ModifyPBRShader();
 GLFWwindow* InitializeWindow();
+uint32_t	InitializeIBLResource();
 void		ProcessInput	(GLFWwindow* window, float delta_time);
 void		RenderPass		();
-
+void	    RenderCube(Shader& shader);
+void        RenderGUI();
 /*____________________________________global varaiable____________________________________*/ 
 Camera camera(vec3(0.0f, 0.0f, 3.0f));
 bool   rotate_flag = false;
@@ -54,19 +56,23 @@ vec3   albedo    = vec3(0.5f, 0.0f, 0.0f);
 
 int main()
 {	
-	GLFWwindow* window	   = InitializeWindow();
-	float       last_frame = 0.0f;
-
-	if (window == nullptr) goto program_end;
+	GLFWwindow* window = InitializeWindow();	
+	if (window == nullptr) {
+		glfwTerminate();
+		return 1;
+	};
 	
 	ModifyPBRShader();
 
+	uint32_t cube_map = InitializeIBLResource();
+	Shader   skybox_shader(VERT_PATH(skybox), FRAG_PATH(skybox));
+	
 	glEnable(GL_DEPTH_TEST);
-
+	float last_frame = 0.0f;
 	while (!glfwWindowShouldClose(window)) {
 		float  current_frame = static_cast<float>(glfwGetTime());
 		float  delta_time = current_frame - last_frame;
-		last_frame = current_frame;
+		last_frame		  = current_frame;
 
 		ProcessInput(window, delta_time);
 
@@ -74,20 +80,31 @@ int main()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		RenderPass  ();
+		
+		glDepthFunc(GL_LEQUAL);
+		skybox_shader.use();
+		skybox_shader.setInt("env_map", 0);
+		skybox_shader.setMat4("proj", glm::perspective(glm::radians(camera.Zoom), (float)(scr_width)/ (float)(scr_height), 0.1f, 100.0f));
+		skybox_shader.setMat4("view", camera.GetViewMatrix());
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map);
+		RenderCube(skybox_shader);
+		glDepthFunc(GL_LESS);
+
+		RenderGUI();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
-program_end:
 	glfwTerminate();
 	return 0;
 }
 
 void	 RenderSphere(Shader & shader);
-void	 RenderGUI();
 pair<uint32_t, uint32_t> 
 		 InitSphereResource();
+uint32_t InitCubeResource();
 
 void RenderPass()
 {
@@ -100,9 +117,8 @@ void RenderPass()
 				  .color = {300.0f, 300.0f, 300.0f}};
 
 	static Shader pbr_shader(VERT_PATH(pbr), FRAG_PATH(pbr));
-
+	
 	pbr_shader.use();
-
 #ifdef PBR_TEXTURE
 	static bool   shader_first_use = true;
 	if (shader_first_use) {
@@ -119,7 +135,7 @@ void RenderPass()
 
 	
 	// set global vert properties
-	pbr_shader.setMat4("proj",  glm::perspective(glm::radians(camera.Zoom), (float)kScrWidth / kScrHeight, 0.1f, 100.0f));
+	pbr_shader.setMat4("proj",  glm::perspective(glm::radians(camera.Zoom), (float)scr_width / scr_height, 0.1f, 100.0f));
 	pbr_shader.setMat4("view",  camera.GetViewMatrix());
 
 	// set global fragment properties
@@ -129,7 +145,7 @@ void RenderPass()
 	
 	RenderSphere(pbr_shader);
 
-	RenderGUI();
+	
 }
 
 void RenderSphere(Shader & shader)
@@ -168,6 +184,19 @@ void RenderSphere(Shader & shader)
 
 }
 
+void RenderCube(Shader& shader)
+{
+	static uint32_t cube_vao = 0;
+
+	if (0 == cube_vao) {
+		cube_vao = InitCubeResource();
+	}
+
+	glBindVertexArray(cube_vao);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+	glBindVertexArray(0);
+}
+
 void RenderGUI()
 {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -180,9 +209,9 @@ void RenderGUI()
 #ifdef PBR_TEXTURE
 	
 #else
-	ImGui::SliderFloat("metalic", &metalic, 0.0f, 1.0f, "%.2f");
+	ImGui::SliderFloat("metalic",   &metalic, 0.0f, 1.0f, "%.2f");
 	ImGui::SliderFloat("roughness", &roughness, 0.05f, 1.0f, "%.2f");
-	ImGui::ColorPicker3("albedo", glm::value_ptr(albedo));
+	ImGui::ColorPicker3("albedo",   glm::value_ptr(albedo));
 #endif // PBR_TEXTURE
 	
 	ImGui::End();
@@ -273,8 +302,76 @@ pair<uint32_t, uint32_t> InitSphereResource()
 	return {vao, static_cast<uint32_t>(indices.size())};
 }
 
+uint32_t InitCubeResource()
+{
+	float vertices[] = {
+		// back face
+		-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+		 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+		 1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f, // bottom-right         
+		 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+		-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+		-1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f, // top-left
+		// front face
+		-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+		 1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f, // bottom-right
+		 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+		 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+		-1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f, // top-left
+		-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+		// left face
+		-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+		-1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-left
+		-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+		-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+		-1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+		-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+		// right face
+		 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+		 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+		 1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-right         
+		 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+		 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+		 1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-left     
+		// bottom face
+		-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+		 1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f, // top-left
+		 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+		 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+		-1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+		-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+		// top face
+		-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+		 1.0f,  1.0f , 1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+		 1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f, // top-right     
+		 1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+		-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+		-1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f  // bottom-left        
+	};
+	uint32_t vao, vbo;
+	glGenVertexArrays(1, &vao);
+	glGenBuffers	 (1, &vbo);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glBindVertexArray(vao);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));	
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+
+	return vao;
+}
+
 void FrameSizeChangeCallback(GLFWwindow* window, int width, int height)
 {
+	scr_width  = width;
+	scr_height = height;
 	glViewport(0, 0, width, height);
 }
 
@@ -337,7 +434,7 @@ void ModifyPBRShader()
 	fstream f;
 	f.open(FRAG_PATH(pbr), ios::in | ios::binary | ios::out);
 	if (f.is_open()) {
-		f.seekp(19, ios_base::beg);
+		f.seekp(20, ios_base::beg);
 #ifdef PBR_TEXTURE
 		f << "#define PBR_TEXTURE";
 #else
@@ -359,7 +456,7 @@ GLFWwindow* InitializeWindow()
 	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(kScrWidth, kScrHeight, "PBR_EXAMPLE", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(scr_width, scr_height, "PBR_EXAMPLE", NULL, NULL);
 	glfwMakeContextCurrent(window);
 	if (window == NULL) {
 		cout << "Create Window Error\n";
@@ -387,4 +484,85 @@ GLFWwindow* InitializeWindow()
 	ImGui_ImplOpenGL3_Init("#version 450");
 
 	return window;
+}
+
+uint32_t
+InitializeIBLResource()
+{
+	static uint32_t ibl_width = 1024, ibl_height = 1024;
+	// fbo and rbo idx
+	uint32_t fbo, rbo;
+	glGenFramebuffers(1,  &fbo);
+	glGenRenderbuffers(1, &rbo);
+
+	glBindFramebuffer(GL_FRAMEBUFFER,   fbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, ibl_width, ibl_height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+	// cube map idx
+	uint32_t env_cubemap;
+	glGenTextures(1, &env_cubemap);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, env_cubemap);
+	for (uint32_t i = 0; i < 6; ++i) {
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, ibl_width, ibl_height, 0, GL_RGB, GL_FLOAT, nullptr);
+	}
+
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	
+	
+	uint32_t hdr_texture = 0;
+	stbi_set_flip_vertically_on_load(true);
+	int width, height, nr_components;
+	float* data = stbi_loadf(ASSET_PATH_DIR"/sunsetpeek/sunsetpeek_ref.hdr", &width, &height, &nr_components, 0);
+	if (data){
+		glGenTextures(1, &hdr_texture);
+		glBindTexture(GL_TEXTURE_2D, hdr_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, data);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	}
+	else {
+		cout << "Failed to load HDR image\n";
+	}
+
+	Shader et2cube_shader(VERT_PATH(ira_ibl), FRAG_PATH(ira_ibl));	
+	glm::mat4 cap_proj       = glm::perspective(glm::radians(90.0f), 1.0f, 0.0f, 10.0f);
+	glm::mat4 cap_views[] = {
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f,  0.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f),  glm::vec3(0.0f,  0.0f, 1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  -1.0f, 0.0f),  glm::vec3(0.0f,  0.0f, -1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))
+	};
+
+	et2cube_shader.use();
+	et2cube_shader.setInt("equirectangular_map", 0);
+	et2cube_shader.setMat4("proj", cap_proj);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, hdr_texture);
+	
+	glViewport(0, 0, ibl_width, ibl_height);
+	for (uint32_t i = 0; i < 6; ++i) {
+		et2cube_shader.setMat4("view", cap_views[i]);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, env_cubemap, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		RenderCube(et2cube_shader);
+	}
+	
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1,  &fbo);
+	glDeleteRenderbuffers(1, &rbo);
+	glDeleteTextures(1, &hdr_texture);
+	glViewport(0, 0, scr_width, scr_height);
+	return env_cubemap;
 }
