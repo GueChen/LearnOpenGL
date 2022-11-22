@@ -1,4 +1,12 @@
-﻿#include "shader.h"
+﻿#ifdef WIN32
+#include <Windows.h>
+#endif
+
+// pbr_proj local file
+#include "file_manager.h"
+
+// common lib
+#include "shader.h"
 #include "camera.h"
 #include "model.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,6 +18,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <filesystem>
 #include <iostream>
 #include <cstdint>
 
@@ -36,7 +45,7 @@ using tuuuu = tuple<uint32_t, uint32_t, uint32_t, uint32_t>;
 
 void        ModifyPBRShader();
 GLFWwindow* InitializeWindow();
-tuuuu		InitializeIBLResource();
+tuuuu		InitializeIBLResource(filesystem::path hdr_file);
 void		ProcessInput	(GLFWwindow* window, float delta_time);
 void		RenderPass		();
 void		RenderSkyBox    (const uint32_t& cube_map);
@@ -45,8 +54,9 @@ void		RenderQuad      ();
 void        RenderGUI		();
 /*____________________________________global varaiable____________________________________*/ 
 Camera camera(vec3(0.0f, 0.0f, 3.0f));
-bool   rotate_flag = false;
+bool     rotate_flag = false;
 
+// uniform sampler or variable var
 #ifdef PBR_TEXTURE
 uint32_t albedo    = 0;
 uint32_t normal    = 0;
@@ -59,6 +69,14 @@ float  roughness = 0.05f;
 vec3   albedo    = vec3(0.5f, 0.0f, 0.0f);
 #endif
 
+uint32_t cube_map     = 0;
+uint32_t hdr_texture  = 0;
+#ifdef IBL
+uint32_t irr_map      = 0;
+uint32_t pft_map      = 0;
+uint32_t brdf_lut_tex = 0;
+#endif
+
 int main()
 {	
 	GLFWwindow* window = InitializeWindow();	
@@ -66,29 +84,23 @@ int main()
 		glfwTerminate();
 		return 1;
 	};
-	
-	ModifyPBRShader();
-		
-	// the pos not good as far
-#ifdef IBL
-	auto [cube_map, irr_map, pft_map, brdf_tex] = InitializeIBLResource();
-
-	glActiveTexture(GL_TEXTURE5);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, irr_map);
-	glActiveTexture(GL_TEXTURE6);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, pft_map);
-	glActiveTexture(GL_TEXTURE7);
-	glBindTexture(GL_TEXTURE_2D,	   brdf_tex);
-#endif
-
 	glEnable(GL_DEPTH_TEST);
+	// set depth function to less than AND equal for skybox depth trick.
+	glDepthFunc(GL_LEQUAL);
+	// enable seamless cubemap sampling for lower mip levels in the pre-filter map.
+	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 
+	ModifyPBRShader();
+	
+	tie(cube_map, irr_map, pft_map, brdf_lut_tex) = InitializeIBLResource(ASSET_PATH_DIR"/sunsetpeek/sunsetpeek_ref.hdr");
+
+	// the pos not good as far	
 	float last_frame = 0.0f;
 	while (!glfwWindowShouldClose(window)) {
 		float  current_frame = static_cast<float>(glfwGetTime());
 		float  delta_time = current_frame - last_frame;
 		last_frame		  = current_frame;
-
+		
 		ProcessInput(window, delta_time);
 
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -96,11 +108,7 @@ int main()
 
 		RenderPass  ();
 
-#ifdef IBL
-		glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 		RenderSkyBox(cube_map);
-		glDisable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
-#endif
 
 		RenderGUI   ();
 
@@ -180,7 +188,6 @@ void RenderPass()
 	pbr_shader.setVec3("camera_pos",  camera.Position);
 	
 	RenderSphere(pbr_shader);
-
 	
 }
 
@@ -209,11 +216,20 @@ void RenderSphere(Shader & shader)
 	glActiveTexture(GL_TEXTURE4);
 	glBindTexture(GL_TEXTURE_2D, ao);
 #else
-	shader.setVec3("albedo", albedo);
-	shader.setFloat("metallic", metalic);
+	shader.setVec3("albedo",	 albedo);
+	shader.setFloat("metallic",  metalic);
 	shader.setFloat("roughness", roughness);
-	shader.setFloat("ao", 1.0f);
+	shader.setFloat("ao",		 1.0f);
 #endif // PBR_TEXURE
+
+#ifdef IBL
+	glActiveTexture(GL_TEXTURE5);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, irr_map);
+	glActiveTexture(GL_TEXTURE6);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, pft_map);
+	glActiveTexture(GL_TEXTURE7);
+	glBindTexture(GL_TEXTURE_2D,	   brdf_lut_tex);
+#endif
 
 	glBindVertexArray(sphere_vao);
 	glDrawElements(GL_TRIANGLE_STRIP, index_count, GL_UNSIGNED_INT, 0);
@@ -252,16 +268,87 @@ void RenderGUI()
 
 	ImGui::NewFrame();
 	ImGui::Begin("Setting Box");
-	ImGui::Text("Properties");
-
-#ifdef PBR_TEXTURE
 	
+	
+	
+
+#ifdef PBR_TEXTURE		
+	ImGui::Text("albedo");
+	if (ImGui::ImageButton((GLuint*)albedo, ImVec2(75, 75))) {
+		std::filesystem::path albedo_path = GetPathFromOpenDialog();
+		if (!albedo_path.empty()) {
+			uint32_t new_albedo = TextureFromFile(albedo_path.filename().string().c_str(), albedo_path.parent_path().string());
+			if (0 != new_albedo) {
+				glDeleteTextures(1, &albedo); albedo = new_albedo;
+			}
+		}
+	}ImGui::NewLine();
+
+	ImGui::Text("normal");
+	if (ImGui::ImageButton((GLuint*)normal, ImVec2(75, 75))) {
+		std::filesystem::path normal_path = GetPathFromOpenDialog();
+		if (!normal_path.empty()) {
+			uint32_t new_normal = TextureFromFile(normal_path.filename().string().c_str(), normal_path.parent_path().string());
+			if (0 != new_normal) {
+				glDeleteTextures(1, &normal); normal = new_normal;
+			}
+		}
+	}ImGui::NewLine();
+	
+	ImGui::Text("metallic");
+	if (ImGui::ImageButton((GLuint*)metallic, ImVec2(75, 75))) {
+		std::filesystem::path metallic_path = GetPathFromOpenDialog();
+		if (!metallic_path.empty()) {
+			uint32_t new_metallic = TextureFromFile(metallic_path.filename().string().c_str(), metallic_path.parent_path().string());
+			if (0 != new_metallic) {
+				glDeleteTextures(1, &metallic); metallic = new_metallic;
+			}
+		}
+	}ImGui::NewLine();
+
+	ImGui::Text("roughness");
+	if (ImGui::ImageButton((GLuint*)roughness, ImVec2(75, 75))) {
+		std::filesystem::path roughness_path = GetPathFromOpenDialog();
+		if (!roughness_path.empty()) {
+			uint32_t new_roughness = TextureFromFile(roughness_path.filename().string().c_str(), roughness_path.parent_path().string());
+			if (0 != new_roughness) {
+				glDeleteTextures(1, &roughness); roughness = new_roughness;
+			}
+		}
+	}ImGui::NewLine();
+
+	ImGui::Text("ao");
+	if (ImGui::ImageButton((GLuint*)ao, ImVec2(75, 75))) {
+		std::filesystem::path ao_path = GetPathFromOpenDialog();
+		if (!ao_path.empty()) {
+			uint32_t new_ao = TextureFromFile(ao_path.filename().string().c_str(), ao_path.parent_path().string());
+			if (0 != new_ao) {
+				glDeleteTextures(1, &ao); ao = new_ao;
+			}
+		}
+	}ImGui::NewLine();
+
 #else
 	ImGui::SliderFloat("metalic",   &metalic, 0.0f, 1.0f, "%.2f");
 	ImGui::SliderFloat("roughness", &roughness, 0.05f, 1.0f, "%.2f");
 	ImGui::ColorPicker3("albedo",   glm::value_ptr(albedo));
+	ImGui::NewLine();
+	ImGui::Text("backgournd");
 #endif // PBR_TEXTURE
-	
+	ImGui::Text("HDR");
+	if (ImGui::ImageButton((GLuint*)hdr_texture, ImVec2(75, 75))) {
+		std::filesystem::path hdr_path = GetPathFromOpenDialog();
+		if (!hdr_path.empty() &&
+			hdr_path.filename().string().rfind("hdr") != string::npos) {
+			auto [env, irr, pft, brdf_lut] = InitializeIBLResource(hdr_path);
+			if (env != 0) {
+				glDeleteTextures(1, &cube_map); cube_map = env;
+				glDeleteTextures(1, &irr_map);	irr_map = irr;
+				glDeleteTextures(1, &pft_map);  pft_map = pft;
+			}
+		}
+	}
+
 	ImGui::End();
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -557,7 +644,8 @@ GLFWwindow* InitializeWindow()
 	}
 
 	ImGui::CreateContext();
-	ImGui::StyleColorsClassic();
+	//ImGui::StyleColorsClassic();
+	ImGui::StyleColorsDark();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 450");
@@ -566,12 +654,12 @@ GLFWwindow* InitializeWindow()
 }
 
 tuuuu
-InitializeIBLResource()
-{
+InitializeIBLResource(filesystem::path hdr_path)
+{	
 	// global configure
 	// --------------------------------------------------
-	glm::mat4 cap_proj    = glm::perspective(glm::radians(90.0f), 1.0f, 0.0f, 10.0f);
-	glm::mat4 cap_views[] = {
+	static glm::mat4 cap_proj    = glm::perspective(glm::radians(90.0f), 1.0f, 0.0f, 10.0f);
+	static glm::mat4 cap_views[] = {
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f,  0.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f),  glm::vec3(0.0f,  0.0f, 1.0f)),
@@ -579,6 +667,34 @@ InitializeIBLResource()
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f),  glm::vec3(0.0f, -1.0f, 0.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))
 	};
+
+	// load file from path
+	stbi_set_flip_vertically_on_load(true);
+	int width, height, nr_components;
+	float* data = stbi_loadf(hdr_path.generic_string().c_str(), &width, &height, &nr_components, 0);
+	if (data) {
+		// using a class and RAII to hold the Resource
+		if (hdr_texture != 0) {
+			glDeleteTextures(1, &hdr_texture);
+			hdr_texture = 0;
+		}
+		glGenTextures(1, &hdr_texture);
+		glBindTexture(GL_TEXTURE_2D, hdr_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, data);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		stbi_image_free(data);
+	}
+	else {
+		cout << "HDR::LOAD FAILED\n";
+		return { 0, 0, 0, 0 };
+	}
+
+
 
 	// initialize fbo anad rbo
 	// ---------------------------------------------------
@@ -589,12 +705,15 @@ InitializeIBLResource()
 	glBindFramebuffer(GL_FRAMEBUFFER,   fbo);
 	glBindRenderbuffer(GL_RENDERBUFFER, rbo);	
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+	
+	glDepthFunc(GL_LEQUAL);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
 	// Cast the HDR texture to Cubemap texture
 	// ----------------------------------------------------
-	uint32_t ibl_width = 1024, ibl_height = 1024;
+	uint32_t ibl_width   = 1024, ibl_height = 1024;
 	
-	uint32_t env_cubemap;
+	uint32_t env_cubemap = 0;
 	glGenTextures(1, &env_cubemap);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, env_cubemap);
 	for (uint32_t i = 0; i < 6; ++i) {
@@ -606,25 +725,7 @@ InitializeIBLResource()
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		
-	uint32_t hdr_texture = 0;
-	stbi_set_flip_vertically_on_load(true);
-	int width, height, nr_components;
-	float* data = stbi_loadf(ASSET_PATH_DIR"/sunsetpeek/sunsetpeek_ref.hdr", &width, &height, &nr_components, 0);
-	if (data){
-		glGenTextures(1, &hdr_texture);
-		glBindTexture(GL_TEXTURE_2D, hdr_texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, data);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	}
-	else {
-		cout << "Failed to load HDR image\n";
-	}
-
+			
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, ibl_width, ibl_height);
 
 	Shader et2cube_shader(VERT_PATH(cube), FRAG_PATH(rect2cube));			
@@ -634,10 +735,13 @@ InitializeIBLResource()
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, hdr_texture);
 	
+	
 	glViewport(0, 0, ibl_width, ibl_height);
+
 	for (uint32_t i = 0; i < 6; ++i) {
 		et2cube_shader.setMat4("view", cap_views[i]);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, env_cubemap, 0);
+		
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		RenderCube(et2cube_shader);
 	}
@@ -678,7 +782,7 @@ InitializeIBLResource()
 	// ------------------------------------------------
 	uint32_t pft_width = 128, pft_height = 128;
 
-	uint32_t prefilter_map;
+	uint32_t prefilter_map = 0;
 	glGenTextures(1, &prefilter_map);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map);
 	for (uint32_t i = 0; i < 6; ++i) {
@@ -720,33 +824,33 @@ InitializeIBLResource()
 	// ------------------------------------------------
 	uint32_t brdf_width = 512, brdf_height = 512;
 
-	uint32_t brdf_texture;
-	glGenTextures(1, &brdf_texture);
-	glBindTexture(GL_TEXTURE_2D, brdf_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, brdf_width, brdf_height, 0, GL_RG, GL_FLOAT, 0);
+	static uint32_t brdf_texture = 0;
+	if (0 == brdf_texture) {
+		glGenTextures(1, &brdf_texture);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, brdf_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, brdf_width, brdf_height, 0, GL_RG, GL_FLOAT, 0);
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, brdf_width, brdf_height);
+		glViewport(0, 0, brdf_width, brdf_height);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, brdf_width, brdf_height);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_texture, 0);
 
-	glViewport(0, 0, brdf_width, brdf_height);
-
-	Shader brdf_shader(VERT_PATH(brdf_lut), FRAG_PATH(brdf_lut));
-	brdf_shader.use();
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_texture, 0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	RenderQuad();
-
+		Shader brdf_shader(VERT_PATH(brdf_lut), FRAG_PATH(brdf_lut));
+		brdf_shader.use();
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		RenderQuad();
+	}
 	// retrive the configure
 	// ------------------------------------------------
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);	
 	glDeleteFramebuffers (1,  &fbo);
 	glDeleteRenderbuffers(1,  &rbo);
-	glDeleteTextures(1, &hdr_texture);
+	glDepthFunc(GL_LESS);
 	glViewport(0, 0, scr_width, scr_height);
 
 	return { env_cubemap, irr_cubemap, prefilter_map, brdf_texture};

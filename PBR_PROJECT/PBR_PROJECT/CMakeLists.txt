@@ -5,7 +5,7 @@ cmake_minimum_required (VERSION 3.8)
 
 set(TARGET_NAME pbr_demo)
 
-file(GLOB_RECURSE HEADER_FILES "*.h")
+file(GLOB_RECURSE HEADER_FILES "*.h" "*.hpp")
 file(GLOB_RECURSE SOURCE_FILES "*.cpp" "*.c")
 # add glfw3 library
 find_package(glfw3 CONFIG REQUIRED)

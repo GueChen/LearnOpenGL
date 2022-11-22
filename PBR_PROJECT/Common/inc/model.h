@@ -208,7 +208,7 @@ unsigned int TextureFromFile(const char* path, const string& directory, bool gam
     string filename = string(path);
     filename = directory + '/' + filename;
 
-    unsigned int textureID;
+    unsigned int textureID = 0;
     glGenTextures(1, &textureID);
 
     int width, height, nrComponents;

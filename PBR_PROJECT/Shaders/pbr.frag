@@ -1,5 +1,5 @@
 #version 330 core
-#define PBR_TEXTURE
+                   
 #define IBL
 
 out vec4 frag_color;
@@ -39,13 +39,14 @@ uniform sampler2D   brdf_lut_tex;
 const float PI = 3.14159265359;
 
 /*_________________________FUNCTION DEFINITIONS___________________________________*/
+#ifdef PBR_TEXTURE
 vec3 GetNormalFromMap(){
 	vec3 tangent_normal = texture(normal_map, tex_coords).xyz * 2.0 - 1.0;
 
 	vec3 Q1 = dFdx(world_pos);
-	vec3 Q2 = dFdx(world_pos);
+	vec3 Q2 = dFdy(world_pos);
 	vec2 st1 = dFdx(tex_coords);
-	vec2 st2 = dFdx(tex_coords);
+	vec2 st2 = dFdy(tex_coords);
 
 	vec3 N = normalize(normal);
 	vec3 T = normalize(Q1 * st2.t - Q2*st1.t);
@@ -54,6 +55,7 @@ vec3 GetNormalFromMap(){
 
 	return normalize(TBN * tangent_normal);
 }
+#endif
 
 vec3 FresnelSchlick(float cos_theta, vec3 F0, float roughness){
 	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -151,11 +153,13 @@ void main()
 	vec3 diffuse    = irradiance * albedo;
 
 	const float kMaxRefLod = 4.0;
-	vec3  prefilter_color = textureLod(pft_map, R, roughness * kMaxRefLod).rgb;
+	vec3  prefilter_color = textureLod(pft_map, R, roughness * 1.0f).rgb;
 	vec2  brdf	   = texture(brdf_lut_tex, vec2(max(dot(N, V), 0.0), roughness)).rg;
-	vec3  specular =prefilter_color * (F * brdf.x + brdf.y);
+	vec3  specular = prefilter_color * (F * brdf.x + brdf.y);
 
-	vec3  ambient = (Kd * diffuse + specular) * ao;
+	vec3  ambient = (Kd * diffuse 
+					 + specular) 
+					 * ao;
 
 #else
 	vec3  ambient = vec3(0.03) * albedo * ao;
