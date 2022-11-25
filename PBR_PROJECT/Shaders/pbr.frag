@@ -1,5 +1,5 @@
 #version 330 core
-                   
+#define PBR_TEXTURE
 #define IBL
 
 out vec4 frag_color;

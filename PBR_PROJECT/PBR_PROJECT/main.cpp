@@ -3,6 +3,7 @@
 #endif
 
 // pbr_proj local file
+#include "custom_glfw_window.h"
 #include "file_manager.h"
 
 // common lib
@@ -10,7 +11,7 @@
 #include "camera.h"
 #include "model.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include <GLFW/glfw3.h>
+
 #include <stb_image.h>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -34,8 +35,7 @@ using namespace glm;
 #endif // PBR_TEXTURE
 
 /*____________________________________const varaiable____________________________________*/
-uint32_t scr_width  = 1280;
-uint32_t scr_height = 720;
+
 
 /*____________________________________function declarations_______________________________*/
 #ifdef PBR_TEXTURE
@@ -54,8 +54,13 @@ void		RenderQuad      ();
 void        RenderGUI		();
 /*____________________________________global varaiable____________________________________*/ 
 Camera camera(vec3(0.0f, 0.0f, 3.0f));
-bool     rotate_flag = false;
-
+// scene relate global obj
+struct Light {
+	vec3 pos;
+	vec3 color;
+};
+Light m_light{ .pos = {10.0f, 0.0f, 10.0f},
+			  .color = {300.0f, 300.0f, 300.0f} };
 // uniform sampler or variable var
 #ifdef PBR_TEXTURE
 uint32_t albedo    = 0;
@@ -89,7 +94,7 @@ int main()
 	glDepthFunc(GL_LEQUAL);
 	// enable seamless cubemap sampling for lower mip levels in the pre-filter map.
 	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
-
+	
 	ModifyPBRShader();
 	
 	tie(cube_map, irr_map, pft_map, brdf_lut_tex) = InitializeIBLResource(ASSET_PATH_DIR"/sunsetpeek/sunsetpeek_ref.hdr");
@@ -142,14 +147,6 @@ uint32_t InitQuadResource();
 
 void RenderPass()
 {
-	struct Light {
-		vec3 pos;
-		vec3 color;
-	};
-	// scene relate global obj
-	Light m_light{.pos   = {10.0f, 0.0f, 10.0f},
-				  .color = {300.0f, 300.0f, 300.0f}};
-
 	static Shader pbr_shader(VERT_PATH(pbr), FRAG_PATH(pbr));
 	
 	pbr_shader.use();
@@ -268,83 +265,90 @@ void RenderGUI()
 
 	ImGui::NewFrame();
 	ImGui::Begin("Setting Box");
-	
-	
-	
+	if(ImGui::CollapsingHeader("Light")){
+		ImGui::DragFloat3("pos",   glm::value_ptr(m_light.pos),   1.0f, -50.0f, 50.0f);
+		ImGui::DragFloat3("color", glm::value_ptr(m_light.color), 1.0f, 0.0f,   500.0f);
+	}
 
-#ifdef PBR_TEXTURE		
-	ImGui::Text("albedo");
-	if (ImGui::ImageButton((GLuint*)albedo, ImVec2(75, 75))) {
-		std::filesystem::path albedo_path = GetPathFromOpenDialog();
-		if (!albedo_path.empty()) {
-			uint32_t new_albedo = TextureFromFile(albedo_path.filename().string().c_str(), albedo_path.parent_path().string());
-			if (0 != new_albedo) {
-				glDeleteTextures(1, &albedo); albedo = new_albedo;
+#ifdef PBR_TEXTURE
+	if (ImGui::CollapsingHeader("Textures")) {
+		if(ImGui::CollapsingHeader("albedo")) {
+			if (ImGui::ImageButton((GLuint*)albedo, ImVec2(75, 75))) {
+				std::filesystem::path albedo_path = GetPathFromOpenDialog();
+				if (!albedo_path.empty()) {
+					uint32_t new_albedo = TextureFromFile(albedo_path.filename().string().c_str(), albedo_path.parent_path().string());
+					if (0 != new_albedo) {
+						glDeleteTextures(1, &albedo); albedo = new_albedo;
+					}
+				}
 			}
 		}
-	}ImGui::NewLine();
 
-	ImGui::Text("normal");
-	if (ImGui::ImageButton((GLuint*)normal, ImVec2(75, 75))) {
-		std::filesystem::path normal_path = GetPathFromOpenDialog();
-		if (!normal_path.empty()) {
-			uint32_t new_normal = TextureFromFile(normal_path.filename().string().c_str(), normal_path.parent_path().string());
-			if (0 != new_normal) {
-				glDeleteTextures(1, &normal); normal = new_normal;
+		if (ImGui::CollapsingHeader("normal")) {
+			if (ImGui::ImageButton((GLuint*)normal, ImVec2(75, 75))) {
+				std::filesystem::path normal_path = GetPathFromOpenDialog();
+				if (!normal_path.empty()) {
+					uint32_t new_normal = TextureFromFile(normal_path.filename().string().c_str(), normal_path.parent_path().string());
+					if (0 != new_normal) {
+						glDeleteTextures(1, &normal); normal = new_normal;
+					}
+				}
 			}
 		}
-	}ImGui::NewLine();
-	
-	ImGui::Text("metallic");
-	if (ImGui::ImageButton((GLuint*)metallic, ImVec2(75, 75))) {
-		std::filesystem::path metallic_path = GetPathFromOpenDialog();
-		if (!metallic_path.empty()) {
-			uint32_t new_metallic = TextureFromFile(metallic_path.filename().string().c_str(), metallic_path.parent_path().string());
-			if (0 != new_metallic) {
-				glDeleteTextures(1, &metallic); metallic = new_metallic;
+
+		if (ImGui::CollapsingHeader("metallic")) {
+			if (ImGui::ImageButton((GLuint*)metallic, ImVec2(75, 75))) {
+				std::filesystem::path metallic_path = GetPathFromOpenDialog();
+				if (!metallic_path.empty()) {
+					uint32_t new_metallic = TextureFromFile(metallic_path.filename().string().c_str(), metallic_path.parent_path().string());
+					if (0 != new_metallic) {
+						glDeleteTextures(1, &metallic); metallic = new_metallic;
+					}
+				}
 			}
 		}
-	}ImGui::NewLine();
 
-	ImGui::Text("roughness");
-	if (ImGui::ImageButton((GLuint*)roughness, ImVec2(75, 75))) {
-		std::filesystem::path roughness_path = GetPathFromOpenDialog();
-		if (!roughness_path.empty()) {
-			uint32_t new_roughness = TextureFromFile(roughness_path.filename().string().c_str(), roughness_path.parent_path().string());
-			if (0 != new_roughness) {
-				glDeleteTextures(1, &roughness); roughness = new_roughness;
+		if (ImGui::CollapsingHeader("roughness")) {
+			if (ImGui::ImageButton((GLuint*)roughness, ImVec2(75, 75))) {
+				std::filesystem::path roughness_path = GetPathFromOpenDialog();
+				if (!roughness_path.empty()) {
+					uint32_t new_roughness = TextureFromFile(roughness_path.filename().string().c_str(), roughness_path.parent_path().string());
+					if (0 != new_roughness) {
+						glDeleteTextures(1, &roughness); roughness = new_roughness;
+					}
+				}
 			}
 		}
-	}ImGui::NewLine();
 
-	ImGui::Text("ao");
-	if (ImGui::ImageButton((GLuint*)ao, ImVec2(75, 75))) {
-		std::filesystem::path ao_path = GetPathFromOpenDialog();
-		if (!ao_path.empty()) {
-			uint32_t new_ao = TextureFromFile(ao_path.filename().string().c_str(), ao_path.parent_path().string());
-			if (0 != new_ao) {
-				glDeleteTextures(1, &ao); ao = new_ao;
+		if (ImGui::CollapsingHeader("ao")) {
+			if (ImGui::ImageButton((GLuint*)ao, ImVec2(75, 75))) {
+				std::filesystem::path ao_path = GetPathFromOpenDialog();
+				if (!ao_path.empty()) {
+					uint32_t new_ao = TextureFromFile(ao_path.filename().string().c_str(), ao_path.parent_path().string());
+					if (0 != new_ao) {
+						glDeleteTextures(1, &ao); ao = new_ao;
+					}
+				}
 			}
 		}
-	}ImGui::NewLine();
-
+	}
 #else
 	ImGui::SliderFloat("metalic",   &metalic, 0.0f, 1.0f, "%.2f");
 	ImGui::SliderFloat("roughness", &roughness, 0.05f, 1.0f, "%.2f");
-	ImGui::ColorPicker3("albedo",   glm::value_ptr(albedo));
-	ImGui::NewLine();
-	ImGui::Text("backgournd");
+	ImGui::ColorPicker3("albedo",   glm::value_ptr(albedo));		
 #endif // PBR_TEXTURE
-	ImGui::Text("HDR");
-	if (ImGui::ImageButton((GLuint*)hdr_texture, ImVec2(75, 75))) {
-		std::filesystem::path hdr_path = GetPathFromOpenDialog();
-		if (!hdr_path.empty() &&
-			hdr_path.filename().string().rfind("hdr") != string::npos) {
-			auto [env, irr, pft, brdf_lut] = InitializeIBLResource(hdr_path);
-			if (env != 0) {
-				glDeleteTextures(1, &cube_map); cube_map = env;
-				glDeleteTextures(1, &irr_map);	irr_map = irr;
-				glDeleteTextures(1, &pft_map);  pft_map = pft;
+
+	if (ImGui::CollapsingHeader("Background")) {
+		if (ImGui::ImageButton((GLuint*)hdr_texture, ImVec2(75, 75))) {
+			std::filesystem::path hdr_path = GetPathFromOpenDialog();
+			if (!hdr_path.empty() &&
+				(hdr_path.filename().string().rfind("hdr") != string::npos || hdr_path.filename().string().rfind("exr") != string::npos)) {
+				auto [env, irr, pft, brdf_lut] = InitializeIBLResource(hdr_path);
+				if (env != 0) {
+					glDeleteTextures(1, &cube_map); cube_map = env;
+					glDeleteTextures(1, &irr_map);	irr_map = irr;
+					glDeleteTextures(1, &pft_map);  pft_map = pft;
+				}
 			}
 		}
 	}
