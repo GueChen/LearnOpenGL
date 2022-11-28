@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/norm.hpp>
 #include <vector>
 
 // Defines several possible options for camera movement. Used as abstraction to stay away from window-system specific input methods
@@ -124,8 +125,9 @@ public:
         if (Pitch < -89.0f)
             Pitch = -89.0f;
         
-        updateCameraVectors();        
-        Position = -((float)Position.length() * Front);
+        updateCameraVectors();
+        Position = -((float)glm::l2Norm(Position) * Front);
+        
     }
 
 private:

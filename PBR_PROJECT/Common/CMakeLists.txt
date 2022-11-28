@@ -11,7 +11,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 
 # add glm
-find_package(glm CONFIG REQUIRED)
+find_package(GLM CONFIG REQUIRED)
 
 # find stb
 find_path(STB_INCLUDE_DIRS "stb_c_lexer.h")
@@ -31,7 +31,8 @@ else()
 	message(FATAL_ERROR "COUDNT FOUND GLAD LIB")
 endif()
 
-if(glm_FOUND)
+if(GLM_FOUND)
+	message(STATUS "GLM Have Found - {GLM_INCLUDE_DIR} = ${GLM_INCLUDE_DIR}")
 	target_include_directories(${TARGET_NAME} PUBLIC ${GLM_INCLUDE_DIR})
 	target_link_libraries(${TARGET_NAME} PUBLIC glm::glm)
 else()
@@ -39,7 +40,7 @@ else()
 endif()
 
 if(assimp_FOUND)
-	target_include_directories(${TARGET_NAME} PUBLIC ${assimp_INCLUDE_DIR})
+	target_include_directories(${TARGET_NAME} PUBLIC ${ASSIMP_INCLUDE_DIR})
 	target_link_libraries(${TARGET_NAME} PUBLIC assimp::assimp)
 else()
 	message(FATAL_ERROR "COUDNT FOUND ASSIMP LIB")

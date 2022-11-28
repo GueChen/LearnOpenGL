@@ -32,7 +32,7 @@ void main(){
 		vec3 local_norm = mat3(bone_matrices_arr[bone_ids[i]]) * norm;
 	}
 
-	gl_Position = proj * view * pos_sum;
+	gl_Position = proj * view * model * pos_sum;
 	texcoords   = tex;
 	
 }

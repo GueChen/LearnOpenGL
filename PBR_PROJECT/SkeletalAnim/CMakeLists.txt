@@ -8,7 +8,7 @@ file(GLOB_RECURSE SOURCE_FILES "*.cpp" "*.c")
 # add imgui library
 find_package(imgui CONFIG REQUIRED)
 
-add_executable (${TARGET_NAME} ${SOURCE_FILES} ${HEADER_FILES})
+add_executable (${TARGET_NAME} WIN32 ${SOURCE_FILES} ${HEADER_FILES})
 
 set_property(TARGET ${TARGET_NAME} PROPERTY CXX_STANDARD 20)
 

@@ -20,6 +20,7 @@ endif()
 # add custom defines
 add_definitions(-DSHADER_PATH_PREFIX="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
 add_definitions(-DASSET_PATH_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+add_definitions(-DMODEL_PATH_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/model")
 add_definitions(-DPBR_TEXTURE)
 add_definitions(-DIBL)
 

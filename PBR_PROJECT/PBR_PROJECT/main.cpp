@@ -58,9 +58,11 @@ Camera camera(vec3(0.0f, 0.0f, 3.0f));
 struct Light {
 	vec3 pos;
 	vec3 color;
+	float intensity = 100.0f;
 };
 Light m_light{ .pos = {10.0f, 0.0f, 10.0f},
-			  .color = {300.0f, 300.0f, 300.0f} };
+			   .color = {1.0f, 1.0f, 1.0f},
+			   .intensity = {300.0f} };
 // uniform sampler or variable var
 #ifdef PBR_TEXTURE
 uint32_t albedo    = 0;
@@ -181,7 +183,7 @@ void RenderPass()
 
 	// set global fragment properties
 	pbr_shader.setVec3("light_pos",	  m_light.pos);
-	pbr_shader.setVec3("light_color", m_light.color);
+	pbr_shader.setVec3("light_color", m_light.intensity * m_light.color);
 	pbr_shader.setVec3("camera_pos",  camera.Position);
 	
 	RenderSphere(pbr_shader);
@@ -267,12 +269,15 @@ void RenderGUI()
 	ImGui::Begin("Setting Box");
 	if(ImGui::CollapsingHeader("Light")){
 		ImGui::DragFloat3("pos",   glm::value_ptr(m_light.pos),   1.0f, -50.0f, 50.0f);
-		ImGui::DragFloat3("color", glm::value_ptr(m_light.color), 1.0f, 0.0f,   500.0f);
+		ImGui::ColorEdit3("color", glm::value_ptr(m_light.color));
+		ImGui::DragFloat("intensity", &m_light.intensity, 1.0f, 0.0f, 2000.0f);
 	}
-
+	ImGui::Separator();
 #ifdef PBR_TEXTURE
 	if (ImGui::CollapsingHeader("Textures")) {
-		if(ImGui::CollapsingHeader("albedo")) {
+		ImGui::Spacing(); ImGui::SameLine(15.0f);
+		if(ImGui::TreeNode("albedo")) {
+			ImGui::Spacing(); ImGui::SameLine(20.0f);
 			if (ImGui::ImageButton((GLuint*)albedo, ImVec2(75, 75))) {
 				std::filesystem::path albedo_path = GetPathFromOpenDialog();
 				if (!albedo_path.empty()) {
@@ -282,10 +287,13 @@ void RenderGUI()
 					}
 				}
 			}
+			ImGui::TreePop();
 		}
-
-		if (ImGui::CollapsingHeader("normal")) {
-			if (ImGui::ImageButton((GLuint*)normal, ImVec2(75, 75))) {
+		
+		ImGui::Spacing(); ImGui::SameLine(15.0f);
+		if (ImGui::TreeNode("normal")) {
+			ImGui::Spacing(); ImGui::SameLine(20.0f);
+			if (ImGui::ImageButton((GLuint*)normal, ImVec2(75, 75))) {				
 				std::filesystem::path normal_path = GetPathFromOpenDialog();
 				if (!normal_path.empty()) {
 					uint32_t new_normal = TextureFromFile(normal_path.filename().string().c_str(), normal_path.parent_path().string());
@@ -294,9 +302,11 @@ void RenderGUI()
 					}
 				}
 			}
+			ImGui::TreePop();
 		}
 
-		if (ImGui::CollapsingHeader("metallic")) {
+		ImGui::Spacing(); ImGui::SameLine(15.0f);
+		if (ImGui::TreeNode("metallic")) {			
 			if (ImGui::ImageButton((GLuint*)metallic, ImVec2(75, 75))) {
 				std::filesystem::path metallic_path = GetPathFromOpenDialog();
 				if (!metallic_path.empty()) {
@@ -306,9 +316,11 @@ void RenderGUI()
 					}
 				}
 			}
+			ImGui::TreePop();
 		}
 
-		if (ImGui::CollapsingHeader("roughness")) {
+		ImGui::Spacing(); ImGui::SameLine(15.0f);
+		if (ImGui::TreeNode("roughness")) {			
 			if (ImGui::ImageButton((GLuint*)roughness, ImVec2(75, 75))) {
 				std::filesystem::path roughness_path = GetPathFromOpenDialog();
 				if (!roughness_path.empty()) {
@@ -318,9 +330,11 @@ void RenderGUI()
 					}
 				}
 			}
+			ImGui::TreePop();
 		}
 
-		if (ImGui::CollapsingHeader("ao")) {
+		ImGui::Spacing(); ImGui::SameLine(15.0f);
+		if (ImGui::TreeNode("ao")) {			
 			if (ImGui::ImageButton((GLuint*)ao, ImVec2(75, 75))) {
 				std::filesystem::path ao_path = GetPathFromOpenDialog();
 				if (!ao_path.empty()) {
@@ -330,6 +344,7 @@ void RenderGUI()
 					}
 				}
 			}
+			ImGui::TreePop();
 		}
 	}
 #else
@@ -339,7 +354,9 @@ void RenderGUI()
 #endif // PBR_TEXTURE
 
 	if (ImGui::CollapsingHeader("Background")) {
-		if (ImGui::ImageButton((GLuint*)hdr_texture, ImVec2(75, 75))) {
+		ImGui::Text("HDR");
+		ImGui::Spacing(); ImGui::SameLine();
+		if (ImGui::ImageButton((GLuint*)hdr_texture, ImVec2(75, 75))) {			
 			std::filesystem::path hdr_path = GetPathFromOpenDialog();
 			if (!hdr_path.empty() &&
 				(hdr_path.filename().string().rfind("hdr") != string::npos || hdr_path.filename().string().rfind("exr") != string::npos)) {

@@ -29,6 +29,7 @@ GLFWCustomWindow::GLFWCustomWindow(const char* title, uint32_t width, uint32_t h
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
 
 	m_window_ptr = glfwCreateWindow(width, height, title, NULL, NULL);
 	
