@@ -184,7 +184,7 @@ void RenderPass()
 	// set global fragment properties
 	pbr_shader.setVec3("light_pos",	  m_light.pos);
 	pbr_shader.setVec3("light_color", m_light.intensity * m_light.color);
-	pbr_shader.setVec3("camera_pos",  camera.Position);
+	pbr_shader.setVec3("camera_pos",  camera.pos);
 	
 	RenderSphere(pbr_shader);
 	
