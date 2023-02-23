@@ -41,9 +41,13 @@
 void RenderScene();
 void RenderGUI	();
 
-void ProcessInput     (GLFWwindow* w, float delta_time);
-void MouseMoveCallback(GLFWwindow* window, double xpos, double ypos);
-void ScrollCallback   (GLFWwindow* window, double xoffset, double yoffset);
+void ProcessInput       (GLFWwindow* w, float delta_time);
+void MouseMoveCallback  (GLFWwindow* window, double xpos, double ypos);
+void ScrollCallback     (GLFWwindow* window, double xoffset, double yoffset);
+void FramebufferCallback(GLFWwindow* window, int width, int height);
+
+void GenFrameBuffer(int width, int height);
+void CleanFrameBuffer();
 
 vector<string> Split  (const string& str, char symbol);
 
@@ -59,6 +63,23 @@ Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 vector<Vertex>       vertices;
 vector<unsigned int> indices;
 mutex  mut;
+
+unsigned int texture = 0, fbo = 0, rbo = 0;
+unsigned int render_width = scr_width, render_height = scr_height;
+
+glm::vec3 color_start = glm::vec3(0.4f, 0.1f, 0.9f);
+glm::vec3 color_end   = glm::vec3(0.6f, 0.6f, 0.0f);
+
+float	  roughness   = 0.05f;
+float     metallic    = 0.05f;
+
+struct DirectLight {
+	glm::vec3 dir;
+	glm::vec3 color;
+	DirectLight(glm::vec3 _dir, glm::vec3 _col) : dir(_dir), color(_col) {};
+};
+
+DirectLight glb_light = DirectLight(glm::vec3(-1.0f), glm::vec3(1.0f));
 
 int main() {
 	
@@ -91,6 +112,7 @@ int main() {
 	
 	glfwSetCursorPosCallback(window, MouseMoveCallback);
 	glfwSetScrollCallback(window, ScrollCallback);
+	glfwSetFramebufferSizeCallback(window, FramebufferCallback);
 
 	InitializeImGUI(window);
 #ifdef _WIN32
@@ -103,30 +125,38 @@ int main() {
 	Logger::Message("Pipe Initialize Successed");
 	read_thread = thread(ServerTask, pipe);
 #endif
-	glfwShowWindow(window);
 
-	glEnable(GL_DEPTH_TEST);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glfwShowWindow(window);
+	GenFrameBuffer(render_width, render_height);
+
+	
 	while (!glfwWindowShouldClose(window)) {
 		float current_frame = static_cast<float>(glfwGetTime());
 		float delta_time    = current_frame - last_frame;
 		last_frame = current_frame;
 
 		ProcessInput(window, delta_time);
-
+		glfwMakeContextCurrent(window);
+		
+		RenderScene();
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		RenderGUI();
 
-		RenderScene();
-		
+		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+		}
 		glfwPollEvents();
 		glfwSwapBuffers(window);
+
 	}
 
 finish:
 	glfwTerminate();
+
 #ifdef _WIN32
-	read_thread.join();
+	read_thread.join();	
 #endif
 	Logger::Message("exist");
 	return 0;
@@ -168,7 +198,12 @@ void RenderScene(){
 	static Shader half_alpha_shader(VERT_PATH(simple_vert), FRAG_PATH(tile_color));
 	static Shader draw_line_shader (VERT_PATH(simple_vert), FRAG_PATH(draw_line));
 	static Mesh*  mesh = nullptr;
-		
+	
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);	
+	glViewport(0, 0, render_width, render_height);
+	glEnable(GL_DEPTH_TEST);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 	if (!mesh) {
 		lock_guard<mutex> lock(mut);
 		if (!vertices.empty() && !indices.empty()) {
@@ -176,7 +211,9 @@ void RenderScene(){
 		}
 	}
 	else {
-		glm::mat4 proj = glm::perspective(glm::radians(camera.Zoom), (float)scr_width / scr_height, 0.1f, 100.0f);
+		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glm::mat4 proj = glm::perspective(glm::radians(camera.Zoom), (float)render_width / render_height, 0.1f, 100.0f);
 		glm::mat4 view = camera.GetViewMatrix();
 
 		//glEnable(GL_BLEND);
@@ -189,14 +226,15 @@ void RenderScene(){
 		half_alpha_shader.setVec3("camera_pos", camera.pos);
 		// material settings
 		half_alpha_shader.setInt  ("pri_tot_num", indices.size() / 3);
-		half_alpha_shader.setVec4 ("color_start", glm::vec4(0.85f, 0.2f, 0.95f, 0.6f));
-		half_alpha_shader.setVec4 ("color_end", glm::vec4(0.95f, 0.55f, 0.55f, 0.6f));
-		half_alpha_shader.setFloat("roughness", 0.05f);
-		half_alpha_shader.setFloat("metalic", 0.05f);
+		half_alpha_shader.setVec3 ("color_start", color_start);
+		half_alpha_shader.setVec3 ("color_end",   color_end);
+		half_alpha_shader.setFloat("roughness",   roughness);
+		half_alpha_shader.setFloat("metalic",     metallic);
 		half_alpha_shader.setFloat("ao", 1.0f);
 		// light settings
-		half_alpha_shader.setVec3("light_dir",   glm::vec3(1.0f, 1.0f, 1.0f));
-		half_alpha_shader.setVec3("light_color", glm::vec3(1.0f));
+		half_alpha_shader.setInt ("direct_light_num", 1);
+		half_alpha_shader.setVec3("light_dir[0]",   glb_light.dir);
+		half_alpha_shader.setVec3("light_color[0]", glb_light.color);
 
 		glCullFace(GL_FRONT);
 		half_alpha_shader.setFloat("alpha", 0.3f);
@@ -207,27 +245,94 @@ void RenderScene(){
 		mesh->Draw(half_alpha_shader);
 
 		glDisable(GL_BLEND);
+		
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		glLineWidth(2.0f);
+		//glEnable(GL_LINE_STIPPLE);
 		draw_line_shader.use();
 		draw_line_shader.setMat4("model", glm::mat4(1.0f));
 		draw_line_shader.setMat4("view", view);
 		draw_line_shader.setMat4("proj", proj);
 		
+		glLineWidth(1.0f);
+		glDepthFunc(GL_GREATER);
+		draw_line_shader.setVec3("color", glm::vec3(0.55f));
 		mesh->Draw(draw_line_shader);
+
+		glLineWidth(2.0f);
+		glDepthFunc(GL_LESS);
+		draw_line_shader.setVec3("color", glm::vec3(1.0f));
+		mesh->Draw(draw_line_shader);
+		glEnable(GL_DEPTH_TEST);
 	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void RenderGUI() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
+	
 	ImGui::NewFrame();
-	ImGui::Begin("Setting Box");
+	////ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+	////ImGui::SetNextWindowPos(ImVec2(0, 0));
+	static bool open = true;
+	static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
+	ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+	
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->WorkPos);
+	ImGui::SetNextWindowSize(viewport->WorkSize);
+	ImGui::SetNextWindowViewport(viewport->ID);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
+	if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+		window_flags |= ImGuiWindowFlags_NoBackground;
+	ImGui::Begin("DockSpace Demo", &open, window_flags);
+
+	ImGui::PopStyleVar(2);
+	
+	ImGuiIO& io = ImGui::GetIO();
+	if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
+	{
+		ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+		ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+	}
+	ImGui::End();
+	
+	ImGui::Begin("Setting");
+	if (ImGui::CollapsingHeader("material")) {
+		ImGui::SliderFloat("roughness", &roughness, 0.04f, 1.0f, "%.2f");
+		ImGui::SliderFloat("metallic", &metallic, 0.0f, 1.0f, "%.2f");
+		ImGui::ColorEdit3("start", glm::value_ptr(color_start));
+		ImGui::ColorEdit3("end",   glm::value_ptr(color_end));
+	}
+	
+	if (ImGui::CollapsingHeader("lights")) {
+		if (ImGui::SliderFloat3("dir", glm::value_ptr(glb_light.dir), -1.0f, 1.0f, "%.2f")) {
+			glb_light.dir =  glm::normalize(glb_light.dir);
+		}
+		ImGui::ColorEdit3("color", glm::value_ptr(glb_light.color));
+	}
+	ImGui::Text("No Implementation");
+	ImGui::End();
+
+	ImGui::Begin("Viewport");
+	ImVec2 viewport_panelsize = ImGui::GetContentRegionAvail();
+		
+	ImGui::Image((void*)texture, ImVec2{ viewport_panelsize.x, viewport_panelsize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+	
 	ImGui::End();
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	if (render_width != viewport_panelsize.x || render_height != viewport_panelsize.y) {
+		render_width = viewport_panelsize.x;
+		render_height = viewport_panelsize.y;
+		CleanFrameBuffer();
+		GenFrameBuffer(render_width, render_height);
+	}
 }
 
 void ServerTask(HANDLE pipe)
@@ -369,12 +474,51 @@ void MouseMoveCallback(GLFWwindow* window, double xpos, double ypos)
 		camera.ProcessPerspectiveView(xoffset, -yoffset);
 	}
 }
+void FramebufferCallback(GLFWwindow* window, int width, int height) {
+	CleanFrameBuffer();
+	GenFrameBuffer(render_width, render_height);
+	
+}
+
+void GenFrameBuffer(int width, int height) {
+	// intialize fbo
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+	// initialize rbo
+	glGenRenderbuffers(1, &rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+	// initialize texture
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+}
+
+void CleanFrameBuffer() {
+	if (fbo) {
+		glDeleteFramebuffers(1, &fbo);
+		glDeleteRenderbuffers(1, &rbo);
+		glDeleteTextures(1, &texture);
+	}
+}
 
 void InitializeImGUI(GLFWwindow* window)
 {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 450");
 }

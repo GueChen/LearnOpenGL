@@ -7,8 +7,8 @@ layout(location = 0) out vec4 frag_color;
 
 //__________________ Primitive Related ___________________________________
 uniform int   pri_tot_num;
-uniform vec4  color_start;
-uniform vec4  color_end;
+uniform vec3  color_start;
+uniform vec3  color_end;
 uniform float alpha;
 
 //__________________ Metallic Properties _________________________________
@@ -17,8 +17,10 @@ uniform float roughness;
 uniform float ao;
 
 //__________________ Light Properties ____________________________________
-uniform vec3  light_dir;
-uniform vec3  light_color;
+#define MAX_DIR_LIGHT_NB 5
+uniform int   direct_light_num;
+uniform vec3  light_dir[5];
+uniform vec3  light_color[5];
 
 //__________________ Camera Properties ___________________________________
 uniform vec3  camera_pos;
@@ -63,31 +65,31 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness){
 void main(){	
 	vec3 N = normalize(norm);					// normal
 	vec3 V = normalize(camera_pos - world_pos); // view direction
-	vec3 albedo = mix(color_start, color_end, gl_PrimitiveID / float(pri_tot_num)).xyz; 
-	
-	vec3 L = normalize(light_dir);
-	vec3 H = normalize(V + L);					// half vector direction
-	
+	vec3 albedo =  mix(color_start, color_end, gl_PrimitiveID / float(pri_tot_num)).xyz; 
+		
 	// caculate Fresnel term
 	vec3  F0 = mix(vec3(0.04), albedo, metallic);
 	vec3  Lo = vec3(0.0);
-	{
-	vec3  Fres = FresnelSchlick(max(dot(H, V), 0.0), F0, roughness);
-
-	// caculate Distribution Term and Geomtry Occlusion Term
-	float Ndf = DistributionGGX(N, H, roughness);
-	float Geo = GeometrySmith(N, V, L, roughness);
-
-	vec3  nom      = Ndf * Fres * Geo;
-	float denom    = 4 * max(dot(V, N), 0.0) * max(dot(L, N), 0.0) + 0.0001;
-	vec3  specular = nom / denom;
-
-	vec3  Ks = Fres;
-	vec3  Kd = vec3(1.0 - Ks);
-
-	float NdotL = max(dot(N, L), 0.0);
 	
-	Lo += (Kd * albedo / Pi + specular) * light_color * NdotL;
+	for(int i = 0; i < direct_light_num; ++i){
+		vec3 L = normalize(-light_dir[i]);
+		vec3 H = normalize(V + L);					// half vector direction
+		vec3  Fres = FresnelSchlick(max(dot(H, V), 0.0), F0, roughness);
+
+		// caculate Distribution Term and Geomtry Occlusion Term
+		float Ndf = DistributionGGX(N, H, roughness);
+		float Geo = GeometrySmith(N, V, L, roughness);
+
+		vec3  nom      = Ndf * Fres * Geo;
+		float denom    = 4 * max(dot(V, N), 0.0) * max(dot(L, N), 0.0) + 0.0001;
+		vec3  specular = nom / denom;
+
+		vec3  Ks = Fres;
+		vec3  Kd = vec3(1.0 - Ks);
+
+		float NdotL = max(dot(N, L), 0.0);
+		
+		Lo += (Kd * albedo / Pi + specular) * light_color[i] * NdotL;
 	}
 
 	vec3  F = FresnelSchlick(max(dot(N, V), 0.0), F0, roughness);
@@ -96,7 +98,7 @@ void main(){
 	vec3  Kd = vec3(1.0) - Ks;
 	Kd *= 1.0 - metallic;
 
-	vec3 ambient = vec3(0.03) * albedo * ao;
+	vec3 ambient = vec3(0.05) * albedo * ao;
 	
 	vec3 color = ambient + Lo;
 	// gamma correction
